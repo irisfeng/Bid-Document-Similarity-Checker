@@ -1,0 +1,54 @@
+{
+  "name": "bid-checker-desktop",
+  "version": "1.0.1",
+  "description": "标书查重工具 - 串标检测桌面版",
+  "main": "main.js",
+  "scripts": {
+    "start": "node launch.js",
+    "build": "electron-builder --win --x64",
+    "build:mac": "electron-builder --mac",
+    "build:linux": "electron-builder --linux"
+  },
+  "keywords": [
+    "tender",
+    "bid",
+    "checker",
+    "串标",
+    "查重"
+  ],
+  "author": "",
+  "license": "MIT",
+  "devDependencies": {
+    "electron": "^25.9.8",
+    "electron-builder": "^24.9.1"
+  },
+  "dependencies": {
+    "diff-match-patch": "^1.0.5",
+    "jszip": "^3.10.1",
+    "mammoth": "^1.6.0",
+    "pdfjs-dist": "^3.11.174"
+  },
+  "build": {
+    "appId": "com.bidchecker.desktop",
+    "productName": "标书查重工具",
+    "directories": {
+      "output": "dist"
+    },
+    "win": {
+      "target": [
+        "nsis",
+        "portable"
+      ]
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true
+    },
+    "files": [
+      "main.js",
+      "preload.js",
+      "renderer/**/*",
+      "node_modules/**/*"
+    ]
+  }
+}

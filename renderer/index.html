@@ -1,0 +1,194 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data:;">
+  <title>标书查重工具</title>
+  <link rel="stylesheet" href="./styles.css">
+</head>
+<body>
+  <div class="app-shell">
+    <header class="topbar">
+      <div class="brand">
+        <div class="brand-mark">审</div>
+        <div>
+          <h1>标书查重工具</h1>
+          <p>文本对比 · 异常定位 · 审查工作台</p>
+        </div>
+      </div>
+      <div class="topbar-actions">
+        <button id="compareBtn" class="primary-btn" disabled>开始查重分析</button>
+        <button id="exportBtn" class="ghost-btn" disabled>导出报告</button>
+        <button id="resetBtn" class="ghost-btn">重置</button>
+      </div>
+    </header>
+
+    <section id="noticeBar" class="notice-bar notice-info hidden" aria-live="polite">
+      <div class="notice-copy">
+        <strong id="noticeTitle">提示</strong>
+        <span id="noticeMessage"></span>
+      </div>
+      <button id="noticeDismiss" class="notice-dismiss" type="button" aria-label="关闭提示">知道了</button>
+    </section>
+
+    <section class="upload-strip">
+      <article class="upload-card" data-side="A">
+        <div class="upload-card-head">
+          <span>标书 A</span>
+          <span id="statusA" class="status-text"></span>
+        </div>
+        <button id="pickFileA" class="upload-pick-btn" type="button">选择文件</button>
+        <div class="file-summary">
+          <div id="fileNameA" class="file-name">未选择文件</div>
+          <div id="fileMetaA" class="file-meta">支持 DOCX / PDF / TXT</div>
+        </div>
+        <div id="metaA" class="mini-meta"></div>
+      </article>
+
+      <article class="upload-card" data-side="B">
+        <div class="upload-card-head">
+          <span>标书 B</span>
+          <span id="statusB" class="status-text"></span>
+        </div>
+        <button id="pickFileB" class="upload-pick-btn" type="button">选择文件</button>
+        <div class="file-summary">
+          <div id="fileNameB" class="file-name">未选择文件</div>
+          <div id="fileMetaB" class="file-meta">支持 DOCX / PDF / TXT</div>
+        </div>
+        <div id="metaB" class="mini-meta"></div>
+      </article>
+    </section>
+
+    <section id="overviewPanel" class="overview-panel hidden">
+      <div class="overview-card">
+        <span>综合相似度</span>
+        <strong id="overallScore">0%</strong>
+      </div>
+      <div class="overview-card">
+        <span>精确匹配</span>
+        <strong id="exactScore">0%</strong>
+      </div>
+      <div class="overview-card">
+        <span>模糊匹配</span>
+        <strong id="fuzzyScore">0%</strong>
+      </div>
+      <div class="overview-card">
+        <span>异常总数</span>
+        <strong id="anomalyCount">0</strong>
+      </div>
+      <div class="overview-card risk-card">
+        <span>风险等级</span>
+        <strong id="riskLevel">低风险</strong>
+      </div>
+    </section>
+
+    <section id="workbench" class="workbench hidden">
+      <div class="session-bar">
+        <button id="docChipA" class="doc-chip active" type="button">标书 A</button>
+        <button id="docChipB" class="doc-chip" type="button">标书 B</button>
+        <div class="session-tools">
+          <label for="sortSelect">相似项排序</label>
+          <select id="sortSelect">
+            <option value="page">相似内容从上到下</option>
+            <option value="score">相似度从高到低</option>
+            <option value="severity">风险等级优先</option>
+          </select>
+        </div>
+      </div>
+
+      <div class="tab-bar">
+        <button class="tab-btn active" data-mode="text" type="button">文本对比结果</button>
+        <button class="tab-btn" data-mode="image" type="button">图片对比结果</button>
+        <button class="tab-btn" data-mode="metadata" type="button">作者雷同</button>
+        <button class="tab-btn" data-mode="keyword" type="button">关键字对比结果</button>
+      </div>
+
+      <div class="workspace">
+        <aside class="sidebar">
+          <div class="sidebar-head">
+            <strong id="sidebarTitle">异常目录</strong>
+            <span id="sidebarCount">0 项</span>
+          </div>
+          <div id="sidebarHint" class="sidebar-hint">请先执行比对</div>
+          <div id="anomalyList" class="anomaly-list"></div>
+        </aside>
+
+        <section class="viewer-grid">
+          <article class="viewer-panel">
+            <header class="viewer-head">
+              <strong id="viewerTitleA">标书 A</strong>
+              <span id="viewerPageA" class="page-badge">待定位</span>
+            </header>
+            <div id="viewerMetaA" class="viewer-meta">尚未选择异常项</div>
+            <div id="viewerBodyA" class="viewer-body empty-state">
+              执行比对后，点击左侧异常项以查看 A 文档的证据片段。
+            </div>
+          </article>
+
+          <article class="viewer-panel">
+            <header class="viewer-head">
+              <strong id="viewerTitleB">标书 B</strong>
+              <span id="viewerPageB" class="page-badge">待定位</span>
+            </header>
+            <div id="viewerMetaB" class="viewer-meta">尚未选择异常项</div>
+            <div id="viewerBodyB" class="viewer-body empty-state">
+              执行比对后，点击左侧异常项以查看 B 文档的证据片段。
+            </div>
+          </article>
+        </section>
+      </div>
+
+      <section id="detailPanel" class="detail-panel">
+        <div id="detailTextMode" class="detail-content">
+          <div class="detail-card">
+            <div class="detail-card-head">
+              <strong>异常说明</strong>
+            </div>
+            <div id="anomalyReason" class="detail-text">当前未选择异常项。</div>
+          </div>
+        </div>
+
+        <div id="detailMetadataMode" class="detail-content hidden">
+          <div class="detail-card">
+            <div class="detail-card-head">
+              <strong>元数据对比</strong>
+            </div>
+            <div id="metadataWarnings" class="info-stack"></div>
+            <table class="info-table">
+              <thead>
+                <tr>
+                  <th>属性</th>
+                  <th>标书 A</th>
+                  <th>标书 B</th>
+                </tr>
+              </thead>
+              <tbody id="metadataTable"></tbody>
+            </table>
+          </div>
+        </div>
+
+        <div id="detailKeywordMode" class="detail-content hidden">
+          <div class="detail-card">
+            <div class="detail-card-head">
+              <strong>关键字重合</strong>
+            </div>
+            <div id="keywordList" class="keyword-list"></div>
+          </div>
+        </div>
+
+        <div id="detailImageMode" class="detail-content hidden">
+          <div class="detail-card placeholder-card">
+            <div class="detail-card-head">
+              <strong>图片对比结果</strong>
+            </div>
+            <p>当前版本已预留图片比对入口，后续可接入页面渲染截图与图块相似度识别。</p>
+          </div>
+        </div>
+      </section>
+    </section>
+  </div>
+
+  <script src="./app.js"></script>
+</body>
+</html>
