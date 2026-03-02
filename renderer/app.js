@@ -354,6 +354,28 @@ function renderSidebar(items) {
   });
 }
 
+// 用 <mark> 标签高亮文本中完全相同的子串
+function highlightExactMatches(text, exactMatches) {
+  if (!exactMatches || !exactMatches.length) {
+    return text;
+  }
+
+  // 按起始位置排序，从后往前替换（避免位置偏移）
+  const sorted = [...exactMatches].sort((a, b) => b.startA - a.startA || b.startB - a.startB);
+
+  let result = text;
+  for (const match of sorted) {
+    const startPos = match.startA || 0;
+    const endPos = startPos + match.length;
+    const before = result.slice(0, startPos);
+    const matched = result.slice(startPos, endPos);
+    const after = result.slice(endPos);
+    result = `${before}<mark class="exact-match">${matched}</mark>${after}`;
+  }
+
+  return result;
+}
+
 function fillViewer(container, blocks) {
   container.replaceChildren();
 
@@ -373,7 +395,12 @@ function fillViewer(container, blocks) {
     );
 
     const title = createElement('div', 'viewer-block-title', block.title);
-    const body = createElement('div', null, block.text);
+    const body = document.createElement('div');
+    if (block.html) {
+      body.innerHTML = block.text;
+    } else {
+      body.textContent = block.text;
+    }
 
     wrapper.append(title, body);
     fragment.appendChild(wrapper);
@@ -405,16 +432,21 @@ function renderTextMode(selectedItem) {
   refs.viewerMetaA.textContent = `标书 A · 匹配段落`;
   refs.viewerMetaB.textContent = `标书 B · ${selectedItem.matchType === 'exact' ? '高相似' : '模糊相似'} ${Math.round(selectedItem.score * 100)}%`;
 
-  // 直接展示实际匹配的文本对，不再显示"页面前4段"
+  // 高亮显示完全相同的子串
+  const highlightedA = highlightExactMatches(selectedItem.textA, selectedItem.exactMatches);
+  const highlightedB = highlightExactMatches(selectedItem.textB, selectedItem.exactMatches);
+
   fillViewer(refs.viewerBodyA, [{
     title: `标书 A · 段落 P${selectedItem.pageA}`,
-    text: selectedItem.textA,
-    highlight: true
+    text: highlightedA,
+    highlight: true,
+    html: true
   }]);
   fillViewer(refs.viewerBodyB, [{
     title: `标书 B · 段落 P${selectedItem.pageB}`,
-    text: selectedItem.textB,
-    highlight: true
+    text: highlightedB,
+    highlight: true,
+    html: true
   }]);
 }
 

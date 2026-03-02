@@ -234,6 +234,41 @@ function truncateText(text, maxLength = 160) {
   return `${compact.slice(0, maxLength)}...`;
 }
 
+// 提取两段文本中完全相同的子串（用于精准高亮）
+function extractExactMatches(textA, textB) {
+  const DiffMatchPatch = require('diff-match-patch').diff_match_patch;
+  const dmp = new DiffMatchPatch();
+
+  const diff = dmp.diff_main(textA, textB);
+  dmp.diff_cleanupSemantic(diff);
+
+  const matches = [];
+  let posA = 0;
+  let posB = 0;
+
+  for (const [operation, data] of diff) {
+    const length = data.length;
+    if (operation === 0 && length >= 8) {
+      // 完全相同且长度>=8字符才记录
+      matches.push({
+        textA: data,
+        textB: data,
+        startA: posA,
+        startB: posB,
+        length
+      });
+    }
+    if (operation !== -1) {
+      posA += length;
+    }
+    if (operation !== 1) {
+      posB += length;
+    }
+  }
+
+  return matches;
+}
+
 function buildTextProfiles(paragraphs) {
   return (paragraphs || [])
     .filter((paragraph) => paragraph && paragraph.text && paragraph.text.trim().length >= 30)
@@ -631,6 +666,7 @@ ipcMain.handle('documents:compare', async (event, { docA, docB }) => {
 
       const similarityScore = Number(bestMatch.similarity.toFixed(3));
       const severity = estimateSeverity(similarityScore);
+      const exactMatches = extractExactMatches(profileA.text, bestMatch.profileB.text);
 
       textAnomalies.push({
         id: `text-${textAnomalies.length + 1}`,
@@ -645,6 +681,7 @@ ipcMain.handle('documents:compare', async (event, { docA, docB }) => {
         excerptB: truncateText(bestMatch.profileB.text),
         textA: profileA.text,
         textB: bestMatch.profileB.text,
+        exactMatches,
         groupLabel: `异常页${profileA.page}`,
         reason: similarityScore >= 0.9 ? '长段文本高度一致' : '关键短语和语义结构相近',
         matchType: similarityScore >= 0.9 ? 'exact' : 'fuzzy'
