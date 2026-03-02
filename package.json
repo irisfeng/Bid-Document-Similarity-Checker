@@ -23,6 +23,7 @@
     "electron-builder": "^24.9.1"
   },
   "dependencies": {
+    "canvas": "^3.2.1",
     "diff-match-patch": "^1.0.5",
     "jszip": "^3.10.1",
     "mammoth": "^1.6.0",

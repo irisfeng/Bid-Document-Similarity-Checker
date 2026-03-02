@@ -199,7 +199,8 @@ async function loadFile(side) {
 
     state.docs[side] = {
       file: fileResult,
-      parsed: parseResult
+      parsed: parseResult,
+      buffer: fileResult.data // 保存原始buffer用于渲染PDF页面
     };
 
     updateFileCard(side, fileResult, parseResult);
@@ -355,17 +356,18 @@ function renderSidebar(items) {
 }
 
 // 用 <mark> 标签高亮文本中完全相同的子串
-function highlightExactMatches(text, exactMatches) {
+function highlightExactMatches(text, exactMatches, side = 'A') {
   if (!exactMatches || !exactMatches.length) {
     return text;
   }
 
   // 按起始位置排序，从后往前替换（避免位置偏移）
-  const sorted = [...exactMatches].sort((a, b) => b.startA - a.startA || b.startB - a.startB);
+  const posKey = side === 'A' ? 'startA' : 'startB';
+  const sorted = [...exactMatches].sort((a, b) => b[posKey] - a[posKey]);
 
   let result = text;
   for (const match of sorted) {
-    const startPos = match.startA || 0;
+    const startPos = match[posKey] || 0;
     const endPos = startPos + match.length;
     const before = result.slice(0, startPos);
     const matched = result.slice(startPos, endPos);
@@ -409,6 +411,86 @@ function fillViewer(container, blocks) {
   container.appendChild(fragment);
 }
 
+// 渲染PDF页面并叠加高亮
+async function renderPdfPageWithHighlights(side, pageNumber, exactMatches, scale = 1.5) {
+  const doc = state.docs[side];
+  if (!doc || !doc.buffer) {
+    return null;
+  }
+
+  const container = side === 'A' ? refs.viewerBodyA : refs.viewerBodyB;
+  container.innerHTML = '<div class="pdf-loading">正在渲染页面...</div>';
+
+  try {
+    const result = await window.electronAPI.renderPdfPage(
+      Array.from(doc.buffer),
+      pageNumber,
+      scale
+    );
+
+    if (!result.success) {
+      container.innerHTML = `<div class="pdf-error">渲染失败: ${result.error}</div>`;
+      return null;
+    }
+
+    // 创建容器
+    const wrapper = document.createElement('div');
+    wrapper.className = 'pdf-page-wrapper';
+
+    // 创建图片
+    const img = document.createElement('img');
+    img.src = result.image;
+    img.className = 'pdf-page-image';
+    img.style.width = `${result.width}px`;
+    img.style.height = `${result.height}px`;
+
+    // 创建高亮层
+    const highlightLayer = document.createElement('div');
+    highlightLayer.className = 'pdf-highlight-layer';
+    highlightLayer.style.width = `${result.width}px`;
+    highlightLayer.style.height = `${result.height}px`;
+
+    // 获取该页的文本项坐标
+    const pageTextItems = doc.parsed.metadata.pageTextItems?.[pageNumber] || [];
+
+    // 根据exactMatches绘制高亮
+    if (exactMatches && exactMatches.length > 0) {
+      for (const match of exactMatches) {
+        // 在pageTextItems中查找匹配的文本位置
+        const matchText = match.textA || match.text;
+        if (!matchText) continue;
+
+        // 查找包含匹配文本的文本项
+        for (const item of pageTextItems) {
+          if (item.str && matchText.includes(item.str.substring(0, 20))) {
+            const x = item.x * scale;
+            const y = item.y * scale;
+            const width = (item.width || item.str.length * 10) * scale;
+            const height = (item.height || 12) * scale;
+
+            const highlight = document.createElement('div');
+            highlight.className = 'pdf-highlight-box';
+            highlight.style.left = `${x}px`;
+            highlight.style.top = `${y}px`;
+            highlight.style.width = `${width}px`;
+            highlight.style.height = `${height}px`;
+            highlightLayer.appendChild(highlight);
+          }
+        }
+      }
+    }
+
+    wrapper.appendChild(img);
+    wrapper.appendChild(highlightLayer);
+    container.replaceChildren(wrapper);
+
+    return result;
+  } catch (error) {
+    container.innerHTML = `<div class="pdf-error">渲染失败: ${error.message}</div>`;
+    return null;
+  }
+}
+
 function renderTextMode(selectedItem) {
   refs.anomalyReason.textContent = selectedItem
     ? `${severityLabel(selectedItem.severity)} · 相似度 ${Math.round(selectedItem.score * 100)}% · ${selectedItem.reason}`
@@ -432,22 +514,39 @@ function renderTextMode(selectedItem) {
   refs.viewerMetaA.textContent = `标书 A · 匹配段落`;
   refs.viewerMetaB.textContent = `标书 B · ${selectedItem.matchType === 'exact' ? '高相似' : '模糊相似'} ${Math.round(selectedItem.score * 100)}%`;
 
-  // 高亮显示完全相同的子串
-  const highlightedA = highlightExactMatches(selectedItem.textA, selectedItem.exactMatches);
-  const highlightedB = highlightExactMatches(selectedItem.textB, selectedItem.exactMatches);
+  // 检查文件类型，决定渲染方式
+  const fileA = state.docs.A.file;
+  const fileB = state.docs.B.file;
+  const isPdfA = fileA.name.toLowerCase().endsWith('.pdf');
+  const isPdfB = fileB.name.toLowerCase().endsWith('.pdf');
 
-  fillViewer(refs.viewerBodyA, [{
-    title: `标书 A · 段落 P${selectedItem.pageA}`,
-    text: highlightedA,
-    highlight: true,
-    html: true
-  }]);
-  fillViewer(refs.viewerBodyB, [{
-    title: `标书 B · 段落 P${selectedItem.pageB}`,
-    text: highlightedB,
-    highlight: true,
-    html: true
-  }]);
+  if (isPdfA) {
+    // 渲染PDF页面
+    renderPdfPageWithHighlights('A', selectedItem.pageA, selectedItem.exactMatches);
+  } else {
+    // 非PDF，显示高亮文本
+    const highlightedA = highlightExactMatches(selectedItem.textA, selectedItem.exactMatches, 'A');
+    fillViewer(refs.viewerBodyA, [{
+      title: `标书 A · 段落 P${selectedItem.pageA}`,
+      text: highlightedA,
+      highlight: true,
+      html: true
+    }]);
+  }
+
+  if (isPdfB) {
+    // 渲染PDF页面
+    renderPdfPageWithHighlights('B', selectedItem.pageB, selectedItem.exactMatches);
+  } else {
+    // 非PDF，显示高亮文本
+    const highlightedB = highlightExactMatches(selectedItem.textB, selectedItem.exactMatches, 'B');
+    fillViewer(refs.viewerBodyB, [{
+      title: `标书 B · 段落 P${selectedItem.pageB}`,
+      text: highlightedB,
+      highlight: true,
+      html: true
+    }]);
+  }
 }
 
 function renderMetadataTable() {

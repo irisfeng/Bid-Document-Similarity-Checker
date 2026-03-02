@@ -239,8 +239,10 @@ function extractExactMatches(textA, textB) {
   const DiffMatchPatch = require('diff-match-patch').diff_match_patch;
   const dmp = new DiffMatchPatch();
 
+  // 使用 word 模式进行更精确的比对
   const diff = dmp.diff_main(textA, textB);
-  dmp.diff_cleanupSemantic(diff);
+  // 只做效率清理，不做语义清理（避免把小改动合并掉）
+  dmp.diff_cleanupEfficiency(diff);
 
   const matches = [];
   let posA = 0;
@@ -248,8 +250,8 @@ function extractExactMatches(textA, textB) {
 
   for (const [operation, data] of diff) {
     const length = data.length;
-    if (operation === 0 && length >= 8) {
-      // 完全相同且长度>=8字符才记录
+    // 提高阈值：只有长度>=20字符的完全相同部分才高亮
+    if (operation === 0 && length >= 20) {
       matches.push({
         textA: data,
         textB: data,
@@ -540,9 +542,24 @@ ipcMain.handle('document:parse', async (event, {
         metadata.lastModifiedBy = pdfMeta.info.ModDate || metadata.lastModifiedBy;
       }
 
+      // 存储每页的文本项（含坐标），用于后续渲染高亮
+      const pageTextItems = {};
+
       for (let pageNumber = 1; pageNumber <= pdf.numPages; pageNumber += 1) {
         const page = await pdf.getPage(pageNumber);
+        const viewport = page.getViewport({ scale: 1 });
         const textContent = await page.getTextContent();
+
+        // 记录该页的文本项坐标
+        const textItems = textContent.items.map((item) => ({
+          str: item.str || '',
+          x: item.transform[4],
+          y: viewport.height - item.transform[5], // 转换为左上角坐标系
+          width: item.width,
+          height: item.height
+        }));
+        pageTextItems[pageNumber] = textItems;
+
         const pageText = normalizeWhitespace(
           textContent.items.map((item) => item.str || '').join(' ')
         );
@@ -555,11 +572,13 @@ ipcMain.handle('document:parse', async (event, {
           id: `page-${pageNumber}`,
           order: paragraphs.length,
           page: pageNumber,
-          text: pageText
+          text: pageText,
+          textItems // 保存坐标信息
         });
       }
 
       text = paragraphs.map((paragraph) => paragraph.text).join('\n');
+      metadata.pageTextItems = pageTextItems; // 传递给前端用于渲染
     } else {
       text = normalizeWhitespace(Buffer.from(buffer).toString('utf-8'));
       paragraphs = buildParagraphEntries(text, fileType);
@@ -575,6 +594,50 @@ ipcMain.handle('document:parse', async (event, {
       text,
       metadata,
       paragraphs
+    };
+  } catch (error) {
+    return {
+      success: false,
+      error: error.message
+    };
+  }
+});
+
+// 渲染PDF页面为图片（base64）
+ipcMain.handle('pdf:renderPage', async (event, { buffer, pageNumber, scale = 1.5 }) => {
+  try {
+    const { createCanvas } = require('canvas');
+    const pdfjsLib = require('pdfjs-dist/legacy/build/pdf.js');
+
+    const pdf = await pdfjsLib.getDocument({
+      data: new Uint8Array(buffer),
+      disableWorker: true
+    }).promise;
+
+    const page = await pdf.getPage(pageNumber);
+    const viewport = page.getViewport({ scale });
+
+    const canvas = createCanvas(viewport.width, viewport.height);
+    const context = canvas.getContext('2d');
+
+    // 设置白色背景
+    context.fillStyle = '#ffffff';
+    context.fillRect(0, 0, viewport.width, viewport.height);
+
+    await page.render({
+      canvasContext: context,
+      viewport
+    }).promise;
+
+    // 导出为 base64 PNG
+    const base64 = canvas.toDataURL('image/png');
+
+    return {
+      success: true,
+      image: base64,
+      width: viewport.width,
+      height: viewport.height,
+      scale
     };
   } catch (error) {
     return {
