@@ -492,7 +492,7 @@ ipcMain.handle('document:parse', async (event, {
       }
     } else if (fileType === 'pdf') {
       const pdf = await pdfjsLib.getDocument({
-        data: Buffer.from(buffer),
+        data: new Uint8Array(buffer),
         disableWorker: true
       }).promise;
 
